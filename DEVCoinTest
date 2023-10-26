@@ -1,0 +1,58 @@
+onst DEVCoin = artifacts.require("DEVCoin");
+
+contract("DEVCoin", (accounts) => {
+  it("deployed and initialized DEVCoin", async () => {
+    const devCoin = await DEVCoin.deployed();
+    const name = await devCoin.name();
+    const symbol = await devCoin.symbol();
+    const decimals = await devCoin.decimals();
+    const cap = await devCoin.cap();
+
+    assert.equal(name, "DEVCoin", "Name matches");
+    assert.equal(symbol, "DEV", "Symbol matches");
+    assert.equal(decimals.toNumber(), 14, "Decimals matches");
+    assert.equal(cap.toNumber(), 8000000, "Cap matches");
+  });
+
+  it("should mint new tokens", async () => {
+    const devCoin = await DEVCoin.deployed();
+    const owner = accounts[0];
+    const recipient = accounts[1];
+    const amountToMint = web3.utils.toWei("1000", "ether");
+
+    await devCoin.mint(recipient, amountToMint, { from: owner });
+    const recipientBalance = await devCoin.balanceOf(recipient);
+
+    assert.equal(recipientBalance.toString(), amountToMint, "Recipient's balance matches minted amount");
+  });
+
+  it("should burn tokens", async () => {
+    const devCoin = await DEVCoin.deployed();
+    const owner = accounts[0];
+    const amountToBurn = web3.utils.toWei("500", "ether");
+
+    const initialBalance = await devCoin.balanceOf(owner);
+    await devCoin.burn(amountToBurn, { from: owner });
+    const finalBalance = await devCoin.balanceOf(owner);
+
+    assert.equal(finalBalance.toString(), initialBalance.sub(web3.utils.toBN(amountToBurn)).toString(), "Owner's balance is reduced by the burned amount");
+  });
+
+  it("should update token balances", async () => {
+    const devCoin = await DEVCoin.deployed();
+    const owner = accounts[0];
+    const recipient = accounts[1];
+    const amountToTransfer = web3.utils.toWei("100", "ether");
+
+    const ownerInitialBalance = await devCoin.balanceOf(owner);
+    const recipientInitialBalance = await devCoin.balanceOf(recipient);
+
+    await devCoin.transfer(recipient, amountToTransfer, { from: owner });
+
+    const ownerFinalBalance = await devCoin.balanceOf(owner);
+    const recipientFinalBalance = await devCoin.balanceOf(recipient);
+
+    assert.equal(ownerFinalBalance.toString(), ownerInitialBalance.sub(web3.utils.toBN(amountToTransfer)).toString(), "Owner's balance is reduced after transfer");
+    assert.equal(recipientFinalBalance.toString(), recipientInitialBalance.add(web3.utils.toBN(amountToTransfer)).toString(), "Recipient's balance isincreased after transfer");
+  });
+});
