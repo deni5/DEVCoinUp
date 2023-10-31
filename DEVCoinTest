@@ -1,58 +1,139 @@
-onst DEVCoin = artifacts.require("DEVCoin");
+const DEVCoin = artifacts.require("DEVCoin");
 
 contract("DEVCoin", (accounts) => {
-  it("deployed and initialized DEVCoin", async () => {
-    const devCoin = await DEVCoin.deployed();
-    const name = await devCoin.name();
-    const symbol = await devCoin.symbol();
-    const decimals = await devCoin.decimals();
-    const cap = await devCoin.cap();
+  let DEVCoin;
+  const owner = accounts[0];
+  const spender = accounts[1];
+  const recipient = accounts[2];
 
-    assert.equal(name, "DEVCoin", "Name matches");
-    assert.equal(symbol, "DEV", "Symbol matches");
-    assert.equal(decimals.toNumber(), 14, "Decimals matches");
-    assert.equal(cap.toNumber(), 8000000, "Cap matches");
+  beforeEach(async () => {
+    DEVCoin = await DEVCoin.deployed();
   });
 
-  it("should mint new tokens", async () => {
-    const devCoin = await DEVCoin.deployed();
-    const owner = accounts[0];
-    const recipient = accounts[1];
-    const amountToMint = web3.utils.toWei("1000", "ether");
-
-    await devCoin.mint(recipient, amountToMint, { from: owner });
-    const recipientBalance = await devCoin.balanceOf(recipient);
-
-    assert.equal(recipientBalance.toString(), amountToMint, "Recipient's balance matches minted amount");
+  it("match token name", async () => {
+    const name = await DEVCoin.name();
+    assert.equal(name, "DEVCoin", "Token name doesn't match");
   });
 
-  it("should burn tokens", async () => {
-    const devCoin = await DEVCoin.deployed();
-    const owner = accounts[0];
-    const amountToBurn = web3.utils.toWei("500", "ether");
-
-    const initialBalance = await devCoin.balanceOf(owner);
-    await devCoin.burn(amountToBurn, { from: owner });
-    const finalBalance = await devCoin.balanceOf(owner);
-
-    assert.equal(finalBalance.toString(), initialBalance.sub(web3.utils.toBN(amountToBurn)).toString(), "Owner's balance is reduced by the burned amount");
+  it("match the token symbol", async () => {
+    const symbol = await DEVCoin.symbol();
+    assert.equal(symbol, "DEV", "Token symbol doesn't match.");
   });
 
-  it("should update token balances", async () => {
-    const devCoin = await DEVCoin.deployed();
-    const owner = accounts[0];
-    const recipient = accounts[1];
-    const amountToTransfer = web3.utils.toWei("100", "ether");
+  it("match token decimals", async () => {
+    const decimals = await DEVCoin.decimals();
+    assert.equal(decimals, 14, "Token decimals don't match.");
+  });
 
-    const ownerInitialBalance = await devCoin.balanceOf(owner);
-    const recipientInitialBalance = await devCoin.balanceOf(recipient);
+  it("match the total supply", async () => {
+    const totalSupply = await DEVCoin.totalSupply();
+    const expectedSupply = 8000000 * 10 ** 14;
+    assert.equal(totalSupply.toString(), expectedSupply.toString(), "Total supply doesn't match.");
+  });
 
-    await devCoin.transfer(recipient, amountToTransfer, { from: owner });
+  it("match the initial supply", async () => {
+    const creatorBalance = await DEVCoin.balanceOf(owner);
+    const expectedSupply = 8000000 * 10 ** 14;
+    assert.equal(creatorBalance.toString(), expectedSupply.toString(), "Creator's balance doesn't match.");
+  });
 
-    const ownerFinalBalance = await devCoin.balanceOf(owner);
-    const recipientFinalBalance = await devCoin.balanceOf(recipient);
+  it("deploy and initialize DEVCoin", async () => {
+    const totalSupply = await DEVCoin.totalSupply();
+    assert.equal(totalSupply.toString(), "0", "Total supply should be 0 when the contract is deployed");
+  });
 
-    assert.equal(ownerFinalBalance.toString(), ownerInitialBalance.sub(web3.utils.toBN(amountToTransfer)).toString(), "Owner's balance is reduced after transfer");
-    assert.equal(recipientFinalBalance.toString(), recipientInitialBalance.add(web3.utils.toBN(amountToTransfer)).toString(), "Recipient's balance isincreased after transfer");
+  it("mint new tokens", async () => {
+    const balanceBeforeMint = await DEVCoin.balanceOf(recipient);
+    try {
+      await DEVCoin.mint(recipient, web3.utils.toWei("100", "ether"), { from: owner });
+    } catch (error) {
+      assert.ok(error.message.includes("revert"), "Recipient should not be able to mint more tokens than their balance");
+    }
+    const balanceAfterMint = await DEVCoin.balanceOf(recipient);
+    assert.equal(balanceAfterMint.toString(), balanceBeforeMint.toString(), "Recipient's balance should not change after an unsuccessful mint attempt");
+  });
+
+  it("update allowance when calling approve()", async () => {
+    await DEVCoin.approve(spender, web3.utils.toWei("5", "ether"), { from: owner });
+    const allowance = await DEVCoin.allowance(owner, spender);
+    assert.equal(allowance.toString(), web3.utils.toWei("5", "ether"), "Allowance should be updated after approval");
+  });
+
+  it("should update allowance when calling increaseAllowance()", async () => {
+    await DEVCoin.increaseAllowance(spender, web3.utils.toWei("5", "ether"), { from: owner });
+    const allowance = await DEVCoin.allowance(owner, spender);
+    assert.equal(allowance.toString(), web3.utils.toWei("10", "ether"), "Allowance should be increased when calling increaseAllowance");
+  });
+
+  it("should not allow transfers that exceed the allowance", async () => {
+    const transferAmount = web3.utils.toWei("11", "ether");
+    await DEVCoin.approve(spender, web3.utils.toWei("5", "ether"), { from: owner });
+    try {
+      await DEVCoin.transferFrom(owner, recipient, transferAmount, { from: spender });
+    } catch (error) {
+      assert.ok(error.message.includes("revert"), "Transfer should not be allowed if it exceeds the allowance");
+    }
+    const recipientBalance = await DEVCoin.balanceOf(recipient);
+    assert.equal(recipientBalance.toString(), "0", "Recipient's balance should not change after a failed transferFrom");
+  });
+
+  it("should not allow transfers that exceed the sender's balance", async () => {
+    const transferAmount = web3.utils.toWei("11", "ether");
+    try {
+          await DEVCoin.transfer(recipient, transferAmount, { from: owner });
+    } catch (error) {
+      assert.ok(error.message.includes("revert"), "Transfer should not be allowed if it exceeds the sender's balance");
+    }
+    const recipientBalance = await DEVCoin.balanceOf(recipient);
+    assert.equal(recipientBalance.toString(), "0", "Recipient's balance should not change after a failed transfer");
+  });
+
+  it("should correctly handle transferFrom with correct allowances", async () => {
+    const initialOwnerBalance = await DEVCoin.balanceOf(owner);
+    const initialRecipientBalance = await DEVCoin.balanceOf(recipient);
+    await DEVCoin.approve(spender, web3.utils.toWei("10", "ether"), { from: owner });
+    await DEVCoin.transferFrom(owner, recipient, web3.utils.toWei("10", "ether"), { from: spender });
+    const recipientBalance = await DEVCoin.balanceOf(recipient);
+    const ownerBalance = await DEVCoin.balanceOf(owner);
+    assert.equal(recipientBalance.toString(), initialRecipientBalance.add(web3.utils.toBN(web3.utils.toWei("10", "ether"))).toString(), "Recipient's balance should increase after a successful transferFrom");
+    assert.equal(ownerBalance.toString(), initialOwnerBalance.sub(web3.utils.toBN(web3.utils.toWei("10", "ether"))).toString(), "Owner's balance should decrease after a successful transferFrom");
+  });
+
+  it("not allow transfers from unauthorized accounts", async () => {
+    const unauthorizedAccount = accounts[3];
+    await DEVCoin.transfer(recipient, web3.utils.toWei("10", "ether"), { from: owner });
+    try {
+      await DEVCoin.transferFrom(owner, recipient, web3.utils.toWei("10", "ether"), { from: unauthorizedAccount });
+    } catch (error) {
+      assert.ok(error.message.includes("revert"), "Unauthorized account should not be able to call transferFrom");
+    }
+    const recipientBalance = await DEVCoin.balanceOf(recipient);
+    assert.equal(recipientBalance.toString(), web3.utils.toWei("10", "ether"), "Recipient's balance should not change after a transferFrom from an unauthorized account");
+  });
+
+  it("handle token burning correctly", async () => {
+    const initialOwnerBalance = await DEVCoin.balanceOf(owner);
+    const amountToBurn = web3.utils.toWei("10", "ether");
+    await DEVCoin.burn(amountToBurn, { from: owner });
+    const finalOwnerBalance = await DEVCoin.balanceOf(owner);
+    assert.equal(
+      finalOwnerBalance.toString(),
+      initialOwnerBalance.sub(web3.utils.toBN(amountToBurn)).toString(),
+      "Owner's balance should be reduced by the burned amount"
+    );
+  });
+
+  it("update totalSupply when burning tokens", async () => {
+    const initialTotalSupply = await DEVCoin.totalSupply();
+    const amountToBurn = web3.utils.toWei("10", "ether");
+    await DEVCoin.burn(amountToBurn, { from: owner });
+    const finalTotalSupply = await DEVCoin.totalSupply();
+    assert.equal(
+      finalTotalSupply.toString(),
+      initialTotalSupply.sub(web3.utils.toBN(amountToBurn)).toString(),
+      "Total supply should be reduced by the burned amount"
+    );
   });
 });
+
+
